@@ -2,6 +2,9 @@
 
 A modern web dashboard for monitoring Network Added Storage (NAS) services with real-time health checks and status indicators.
 
+# Desktop
+![screenshot](desktop.png)
+
 ### Overview
 
 The NAS Dashboard provides a unified interface to monitor and access all services running on your NAS machine. It displays the server's public IP address and health status for all active services with quick-access links.
@@ -99,11 +102,6 @@ The backend currently points to a hardcoded NAS IP (`192.168.1.87`). To adjust:
 - Each service has a configurable health check with a 1-5 second timeout
 - All API keys are stored in the backend code (consider using environment variables for production) 
 
-
-## Adding pictures to the project for desktop and mobile 
-
-# Desktop
-![screenshot](desktop.png)
 
 # Mobile
 ![screenshot](mobile.png)
