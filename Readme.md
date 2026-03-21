@@ -98,3 +98,12 @@ The backend currently points to a hardcoded NAS IP (`192.168.1.87`). To adjust:
 - The dashboard fetches your public IP from `ipify.org`
 - Each service has a configurable health check with a 1-5 second timeout
 - All API keys are stored in the backend code (consider using environment variables for production) 
+
+
+## Adding pictures to the project for desktop and mobile 
+
+# Desktop
+![screenshot](desktop.png)
+
+# Mobile
+![screenshot](mobile.png)
