@@ -36,12 +36,14 @@ The NAS Dashboard provides a unified interface to monitor and access all service
 **Backend:**
 - Node.js / Express 5
 - Axios (HTTP requests)
+- System `yt-dlp` command for YouTube to MP3 downloads
 
 ### Installation & Build
 
 #### Prerequisites
 - Node.js (v14 or higher)
 - npm
+- On Windows, install `yt-dlp` and `ffmpeg` and make sure both commands are available on `PATH`
 
 #### Build Steps
 
@@ -90,17 +92,31 @@ npm run dev
 The backend currently points to a hardcoded NAS IP (`192.168.1.87`). To adjust:
 - Edit `app.js` and update the service URLs in the `serviceUrls` object
 - Update health check endpoints and API keys as needed
+- The default music download directory is `E:/Music/Albums` unless `MUSIC_DIR` is set
 
 ### API Endpoints
 
 - `GET /api/health/data` - Get server IP and all services status
 - `GET /api/health/filebrowser` - FileBrowser health check proxy
+- `POST /api/music/download` - Download YouTube audio as MP3 with `yt-dlp`
 
 ### Notes
 
 - The dashboard fetches your public IP from `ipify.org`
 - Each service has a configurable health check with a 1-5 second timeout
 - All API keys are stored in the backend code (consider using environment variables for production) 
+- The Docker image installs `yt-dlp` and `ffmpeg` so `/api/music/download` works inside the container
+- `docker-compose.yml` mounts `E:/Music/Albums` into the container at `/data/music` so downloaded MP3 files persist on the host
+
+### Docker
+
+Build and run with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+With the provided compose file, downloads are stored on the host at `E:/Music/Albums`.
 
 
 # Mobile

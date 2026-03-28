@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import ServiceCard from './components/ServiceCard.jsx';
 import ServerIPDisplay from './components/ServerIPDisplay.jsx';
+import YoutubeDownloadCard from './components/YoutubeDownloadCard.jsx';
 
 const App = () => {
   const [services, setServices] = useState([]);
@@ -71,6 +72,9 @@ const App = () => {
         <div className="mx-auto max-w-7xl space-y-4">
           {/* IP Display Section */}
           <ServerIPDisplay serverIp={serverIp} />
+
+          {/* YouTube Download Section */}
+          <YoutubeDownloadCard />
 
           {/* Services Grid */}
           <div>

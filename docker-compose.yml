@@ -1,0 +1,17 @@
+services:
+  nas-dash:
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    environment:
+      MUSIC_DIR: /data/music
+    volumes:
+      - "E:/Music/Albums:/data/music"
+  registry-ui:
+    image: ghcr.io/eznix86/docker-registry-ui:latest
+    ports:
+      - "8011:80"
+    environment:
+      - REGISTRY_URL=http://your-registry.com:5000
+      - REGISTRY_AUTH=base64basicauthhere
