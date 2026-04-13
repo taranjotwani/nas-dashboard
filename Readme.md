@@ -106,7 +106,7 @@ The backend currently points to a hardcoded NAS IP (`192.168.1.87`). To adjust:
 - Each service has a configurable health check with a 1-5 second timeout
 - All API keys are stored in the backend code (consider using environment variables for production) 
 - The Docker image installs `yt-dlp` and `ffmpeg` so `/api/music/download` works inside the container
-- `docker-compose.yml` mounts `E:/Music/Albums` into the container at `/data/music` so downloaded MP3 files persist on the host
+- `docker-compose.yml` mounts `${MUSIC_SOURCE_DIR:-./music}` into the container at `/data/music` so downloads persist on the host
 
 ### Docker
 
@@ -116,7 +116,41 @@ Build and run with Docker Compose:
 docker compose up --build
 ```
 
-With the provided compose file, downloads are stored on the host at `E:/Music/Albums`.
+By default, downloads are stored in `./music` next to the compose file.
+
+To use a different host folder, create a `.env` file next to `docker-compose.yml` and set `MUSIC_SOURCE_DIR` for that machine:
+
+```bash
+cp .env.example .env
+```
+
+Example `.env` values:
+
+```bash
+MUSIC_SOURCE_DIR=/mnt/c/Music/Album
+```
+
+```bash
+MUSIC_SOURCE_DIR=/mnt/d/Music/Album
+```
+
+You can also export it in your shell before starting Compose:
+
+```bash
+export MUSIC_SOURCE_DIR=/mnt/e/Music/Albums
+docker compose up --build
+```
+
+On Linux, Docker bind mounts must use Linux paths. A Windows-style path like `E:/Music/Albums` will fail unless that drive is mounted into Linux and referenced by its Linux mount path, such as `/mnt/e/Music/Albums`.
+
+If you run Compose from Windows PowerShell or Command Prompt instead of WSL, use a Windows path such as `E:/Music/Albums` in `.env`.
+
+If you run Compose from WSL, use the Linux mount path such as `/mnt/e/Music/Albums`.
+
+That lets each machine keep its own local `.env` without editing `docker-compose.yml`.
+
+*** Add File: /home/taran/repository/nas-dash/.env.example
+MUSIC_SOURCE_DIR=/mnt/c/Music/Album
 
 
 # Mobile

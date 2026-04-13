@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const axios = require('axios');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const sanitizeFilename = require('sanitize-filename');
@@ -10,6 +11,7 @@ const PORT = process.env.PORT || 3000;
 
 const DEFAULT_MUSIC_DIR = process.env.MUSIC_DIR || 'E:/Music/Albums';
 const YT_DLP_COMMAND = process.env.YT_DLP_COMMAND || 'yt-dlp';
+const LINKS_FILE_PATH = path.join(__dirname, 'links.json');
 
 function resolveMusicDirectory(targetDir) {
   if (process.platform === 'win32') {
@@ -47,6 +49,51 @@ async function ensureUniqueFilePath(baseName) {
 
 async function ensureMusicDirectory() {
   await fs.promises.mkdir(MUSIC_DIR, { recursive: true });
+}
+
+async function readLinks() {
+  try {
+    const fileContents = await fs.promises.readFile(LINKS_FILE_PATH, 'utf8');
+    const parsed = JSON.parse(fileContents);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function writeLinks(links) {
+  await fs.promises.writeFile(LINKS_FILE_PATH, `${JSON.stringify(links, null, 2)}\n`, 'utf8');
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const parsedUrl = new URL(value);
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function normalizeLinkInput(input = {}) {
+  const name = typeof input.name === 'string' ? input.name.trim() : '';
+  const url = typeof input.url === 'string' ? input.url.trim() : '';
+
+  if (!name) {
+    return { error: 'Link name is required.' };
+  }
+
+  if (!url || !isValidHttpUrl(url)) {
+    return { error: 'A valid http or https URL is required.' };
+  }
+
+  return {
+    name,
+    url
+  };
 }
 
 function isYouTubeUrl(value) {
@@ -141,11 +188,124 @@ async function downloadYouTubeAudio(youtubeUrl, outputTemplate) {
   ]);
 }
 
+async function ensureMp3FilePath(expectedOutputPath) {
+  if (fs.existsSync(expectedOutputPath)) {
+    return expectedOutputPath;
+  }
+
+  const outputDirectory = path.dirname(expectedOutputPath);
+  const expectedBaseName = path.basename(expectedOutputPath, '.mp3');
+  const downloadedFiles = await fs.promises.readdir(outputDirectory, { withFileTypes: true });
+  const alternateFile = downloadedFiles.find((entry) => {
+    if (!entry.isFile()) {
+      return false;
+    }
+
+    return path.parse(entry.name).name === expectedBaseName;
+  });
+
+  if (!alternateFile) {
+    throw new Error('yt-dlp finished without creating the expected audio file. Check that ffmpeg is installed and available to yt-dlp.');
+  }
+
+  const alternateOutputPath = path.join(outputDirectory, alternateFile.name);
+  await fs.promises.rename(alternateOutputPath, expectedOutputPath);
+
+  return expectedOutputPath;
+}
+
 app.use(express.json({ limit: '1mb' }));
 
 // Serve static files from the dist folder
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
+
+app.get('/api/links', async (req, res) => {
+  try {
+    const links = await readLinks();
+    res.status(200).json(links);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to read links',
+      message: error.message
+    });
+  }
+});
+
+app.post('/api/links', async (req, res) => {
+  try {
+    const normalizedLink = normalizeLinkInput(req.body);
+    if (normalizedLink.error) {
+      return res.status(400).json({ error: normalizedLink.error });
+    }
+
+    const links = await readLinks();
+    const nextLink = {
+      id: crypto.randomUUID(),
+      ...normalizedLink,
+      createdAt: new Date().toISOString()
+    };
+
+    links.push(nextLink);
+    await writeLinks(links);
+    res.status(201).json(nextLink);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to save link',
+      message: error.message
+    });
+  }
+});
+
+app.put('/api/links/:linkId', async (req, res) => {
+  try {
+    const normalizedLink = normalizeLinkInput(req.body);
+    if (normalizedLink.error) {
+      return res.status(400).json({ error: normalizedLink.error });
+    }
+
+    const links = await readLinks();
+    const linkIndex = links.findIndex((link) => link.id === req.params.linkId);
+
+    if (linkIndex === -1) {
+      return res.status(404).json({ error: 'Link not found' });
+    }
+
+    const updatedLink = {
+      ...links[linkIndex],
+      ...normalizedLink,
+      updatedAt: new Date().toISOString()
+    };
+
+    links[linkIndex] = updatedLink;
+    await writeLinks(links);
+    res.status(200).json(updatedLink);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to update link',
+      message: error.message
+    });
+  }
+});
+
+app.delete('/api/links/:linkId', async (req, res) => {
+  try {
+    const links = await readLinks();
+    const nextLinks = links.filter((link) => link.id !== req.params.linkId);
+
+    if (nextLinks.length === links.length) {
+      return res.status(404).json({ error: 'Link not found' });
+    }
+
+    await writeLinks(nextLinks);
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to delete link',
+      message: error.message
+    });
+  }
+});
 
 // Proxy endpoint for FileBrowser health check
 app.get('/api/health/filebrowser', async (req, res) => {
@@ -270,17 +430,18 @@ app.post('/api/music/download', async (req, res) => {
     const outputTemplate = outputPath.replace(/\.mp3$/u, '.%(ext)s');
 
     await downloadYouTubeAudio(youtubeUrl, outputTemplate);
+    const finalOutputPath = await ensureMp3FilePath(outputPath);
 
-    if (!fs.existsSync(outputPath)) {
+    if (!fs.existsSync(finalOutputPath)) {
       throw new Error('yt-dlp finished without creating the expected MP3 file. Check that ffmpeg is installed and available to yt-dlp.');
     }
 
     res.status(201).json({
       status: 'ok',
       message: 'MP3 created successfully',
-      title: videoTitle || path.basename(outputPath, '.mp3'),
-      fileName: path.basename(outputPath),
-      filePath: outputPath,
+      title: videoTitle || path.basename(finalOutputPath, '.mp3'),
+      fileName: path.basename(finalOutputPath),
+      filePath: finalOutputPath,
       outputDirectory: MUSIC_DIR
     });
   } catch (error) {
