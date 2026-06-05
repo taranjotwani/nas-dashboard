@@ -42,8 +42,12 @@ jobs:
 
       - name: Build frontend
         shell: powershell -ExecutionPolicy Bypass -Command "{0}"
-        working-directory: C:\nasdash
-        run: npm run frontend
+        run: |
+          Remove-Item -Recurse -Force "C:\nasdash\dist" -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force "C:\nasdash\dist" | Out-Null
+          Set-Location "C:\nasdash\frontend"
+          npm run build
+          Move-Item "C:\nasdash\frontend\dist\*" "C:\nasdash\dist\"
 
       - name: Start nasdash service
         shell: powershell -ExecutionPolicy Bypass -Command "{0}"
