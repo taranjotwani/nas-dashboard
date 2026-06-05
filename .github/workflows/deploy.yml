@@ -11,23 +11,30 @@ jobs:
 
     steps:
       - name: Stop nasdash service
-        shell: powershell
-        run: Stop-Service -Name nasdash -Force
+        shell: powershell -ExecutionPolicy Bypass -Command "{0}"
+        run: |
+          $service = Get-Service -Name nasdash -ErrorAction SilentlyContinue
+          if ($service) {
+            Write-Host "Service nasdash found, attempting to shut it down..."
+            Stop-Service -Name nasdash -Force
+          } else {
+            Write-Host "Service nasdash not found, skipping stop."
+          }
 
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Copy files to deployment folder
-        shell: powershell
+        shell: powershell -ExecutionPolicy Bypass -Command "{0}"
         run: |
           robocopy "$env:GITHUB_WORKSPACE" "C:\nasdash" /E /XD .git /XF .gitignore
           if ($LASTEXITCODE -le 7) { exit 0 } else { exit $LASTEXITCODE }
 
       - name: Install dependencies
-        shell: powershell
+        shell: powershell -ExecutionPolicy Bypass -Command "{0}"
         working-directory: C:\nasdash
         run: npm install
 
       - name: Start nasdash service
-        shell: powershell
+        shell: powershell -ExecutionPolicy Bypass -Command "{0}"
         run: Start-Service -Name nasdash
