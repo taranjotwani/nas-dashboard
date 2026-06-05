@@ -30,10 +30,20 @@ jobs:
           robocopy "$env:GITHUB_WORKSPACE" "C:\nasdash" /E /XD .git /XF .gitignore
           if ($LASTEXITCODE -le 7) { exit 0 } else { exit $LASTEXITCODE }
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         shell: powershell -ExecutionPolicy Bypass -Command "{0}"
         working-directory: C:\nasdash
         run: npm install
+
+      - name: Install frontend dependencies
+        shell: powershell -ExecutionPolicy Bypass -Command "{0}"
+        working-directory: C:\nasdash\frontend
+        run: npm install
+
+      - name: Build frontend
+        shell: powershell -ExecutionPolicy Bypass -Command "{0}"
+        working-directory: C:\nasdash
+        run: npm run frontend
 
       - name: Start nasdash service
         shell: powershell -ExecutionPolicy Bypass -Command "{0}"
