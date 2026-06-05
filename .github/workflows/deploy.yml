@@ -1,0 +1,33 @@
+name: Deploy to NAS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Stop nasdash service
+        shell: powershell
+        run: Stop-Service -Name nasdash -Force
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy files to deployment folder
+        shell: powershell
+        run: |
+          robocopy "$env:GITHUB_WORKSPACE" "C:\nasdash" /E /XD .git /XF .gitignore
+          if ($LASTEXITCODE -le 7) { exit 0 } else { exit $LASTEXITCODE }
+
+      - name: Install dependencies
+        shell: powershell
+        working-directory: C:\nasdash
+        run: npm install
+
+      - name: Start nasdash service
+        shell: powershell
+        run: Start-Service -Name nasdash
