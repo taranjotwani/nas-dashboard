@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Cpu, MemoryStick } from 'lucide-react';
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 60_000;
 
 function formatBytes(bytes) {
   const gb = bytes / (1024 ** 3);
