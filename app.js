@@ -4,6 +4,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const sanitizeFilename = require('sanitize-filename');
 
 const app = express();
@@ -216,9 +217,47 @@ async function ensureMp3FilePath(expectedOutputPath) {
 
 app.use(express.json({ limit: '1mb' }));
 
+// CPU usage sampling
+function getCpuTotals() {
+  return os.cpus().reduce(
+    (acc, cpu) => {
+      const times = cpu.times;
+      acc.idle += times.idle;
+      acc.total += times.idle + times.user + times.nice + times.sys + times.irq;
+      return acc;
+    },
+    { idle: 0, total: 0 }
+  );
+}
+
+let prevCpuTotals = getCpuTotals();
+
+function getCpuUsagePercent() {
+  const current = getCpuTotals();
+  const idleDelta = current.idle - prevCpuTotals.idle;
+  const totalDelta = current.total - prevCpuTotals.total;
+  prevCpuTotals = current;
+  if (totalDelta === 0) return 0;
+  return Math.round(((totalDelta - idleDelta) / totalDelta) * 100);
+}
+
 // Serve static files from the dist folder
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
+
+app.get('/api/system/stats', (req, res) => {
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+  res.status(200).json({
+    cpu: getCpuUsagePercent(),
+    memory: {
+      usedBytes: usedMem,
+      totalBytes: totalMem,
+      usedPercent: Math.round((usedMem / totalMem) * 100)
+    }
+  });
+});
 
 app.get('/api/links', async (req, res) => {
   try {

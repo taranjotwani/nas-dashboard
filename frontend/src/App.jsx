@@ -13,6 +13,7 @@ import YoutubeDownloadCard from './components/YoutubeDownloadCard.jsx';
 import LinkEditorPanel from './components/LinkEditorPanel.jsx';
 import LinkTileCard, { AddLinkCard } from './components/LinkTileCard.jsx';
 import LinkContext from './context/LinkContext.jsx';
+import SystemUsageCard from './components/SystemUsageCard.jsx';
 
 const App = () => {
   const {
@@ -132,6 +133,9 @@ const App = () => {
 
           {/* YouTube Download Section */}
           <YoutubeDownloadCard />
+
+          {/* System Usage Section */}
+          <SystemUsageCard />
 
           {editorState.isOpen ? (
             <LinkEditorPanel
