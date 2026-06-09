@@ -6,13 +6,42 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const sanitizeFilename = require('sanitize-filename');
+const { MongoClient } = require('mongodb');
+const { LINK_INDEXES, createLinkDocument, updateLinkDocument } = require('./models/Link');
+
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const DEFAULT_MUSIC_DIR = process.env.MUSIC_DIR || 'E:/Music/Albums';
 const YT_DLP_COMMAND = process.env.YT_DLP_COMMAND || 'yt-dlp';
-const LINKS_FILE_PATH = path.join(__dirname, 'links.json');
+
+// MongoDB Atlas connection
+const MONGO_URI = process.env.MONGO_URI;
+const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'nas-dash';
+const MONGO_LINKS_COLLECTION = process.env.MONGO_LINKS_COLLECTION || 'links';
+
+if (!MONGO_URI) {
+  console.error('MONGO_URI environment variable is not set. Set it in your .env file.');
+  process.exit(1);
+}
+
+const mongoClient = new MongoClient(MONGO_URI);
+let linksCollection;
+
+async function connectToDatabase() {
+  await mongoClient.connect();
+  const db = mongoClient.db(MONGO_DB_NAME);
+  linksCollection = db.collection(MONGO_LINKS_COLLECTION);
+
+  // Ensure indexes defined in the schema exist
+  for (const index of LINK_INDEXES) {
+    await linksCollection.createIndex(index.key, index.options);
+  }
+
+  console.log(`Connected to MongoDB Atlas — database: ${MONGO_DB_NAME}, collection: ${MONGO_LINKS_COLLECTION}`);
+}
 
 function resolveMusicDirectory(targetDir) {
   if (process.platform === 'win32') {
@@ -53,21 +82,20 @@ async function ensureMusicDirectory() {
 }
 
 async function readLinks() {
-  try {
-    const fileContents = await fs.promises.readFile(LINKS_FILE_PATH, 'utf8');
-    const parsed = JSON.parse(fileContents);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      return [];
-    }
-
-    throw error;
-  }
+  return linksCollection.find({}, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray();
 }
 
-async function writeLinks(links) {
-  await fs.promises.writeFile(LINKS_FILE_PATH, `${JSON.stringify(links, null, 2)}\n`, 'utf8');
+async function insertLink(linkDoc) {
+  await linksCollection.insertOne(linkDoc);
+}
+
+async function updateLink(id, updatedDoc) {
+  const { id: _ignored, ...fields } = updatedDoc;
+  await linksCollection.updateOne({ id }, { $set: fields });
+}
+
+async function deleteLink(id) {
+  return linksCollection.deleteOne({ id });
 }
 
 function isValidHttpUrl(value) {
@@ -278,16 +306,9 @@ app.post('/api/links', async (req, res) => {
       return res.status(400).json({ error: normalizedLink.error });
     }
 
-    const links = await readLinks();
-    const nextLink = {
-      id: crypto.randomUUID(),
-      ...normalizedLink,
-      createdAt: new Date().toISOString()
-    };
-
-    links.push(nextLink);
-    await writeLinks(links);
-    res.status(201).json(nextLink);
+    const newLink = createLinkDocument(crypto.randomUUID(), normalizedLink.name, normalizedLink.url);
+    await insertLink(newLink);
+    res.status(201).json(newLink);
   } catch (error) {
     res.status(500).json({
       error: 'Failed to save link',
@@ -303,21 +324,13 @@ app.put('/api/links/:linkId', async (req, res) => {
       return res.status(400).json({ error: normalizedLink.error });
     }
 
-    const links = await readLinks();
-    const linkIndex = links.findIndex((link) => link.id === req.params.linkId);
-
-    if (linkIndex === -1) {
+    const existing = await linksCollection.findOne({ id: req.params.linkId }, { projection: { _id: 0 } });
+    if (!existing) {
       return res.status(404).json({ error: 'Link not found' });
     }
 
-    const updatedLink = {
-      ...links[linkIndex],
-      ...normalizedLink,
-      updatedAt: new Date().toISOString()
-    };
-
-    links[linkIndex] = updatedLink;
-    await writeLinks(links);
+    const updatedLink = updateLinkDocument(existing, normalizedLink.name, normalizedLink.url);
+    await updateLink(req.params.linkId, updatedLink);
     res.status(200).json(updatedLink);
   } catch (error) {
     res.status(500).json({
@@ -329,14 +342,11 @@ app.put('/api/links/:linkId', async (req, res) => {
 
 app.delete('/api/links/:linkId', async (req, res) => {
   try {
-    const links = await readLinks();
-    const nextLinks = links.filter((link) => link.id !== req.params.linkId);
-
-    if (nextLinks.length === links.length) {
+    const result = await deleteLink(req.params.linkId);
+    if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Link not found' });
     }
 
-    await writeLinks(nextLinks);
     res.status(204).send();
   } catch (error) {
     res.status(500).json({
@@ -523,6 +533,13 @@ app.use((req, res, next) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend server running at http://localhost:${PORT}`);
-});
+connectToDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Backend server running at http://localhost:${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to connect to MongoDB Atlas:', error.message);
+    process.exit(1);
+  });

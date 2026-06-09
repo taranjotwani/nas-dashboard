@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
-
+    environment: Production
     steps:
       - name: Stop nasdash service
         shell: powershell -ExecutionPolicy Bypass -Command "{0}"
@@ -29,6 +29,28 @@ jobs:
         run: |
           robocopy "$env:GITHUB_WORKSPACE" "C:\nasdash" /E /XD .git /XF .gitignore
           if ($LASTEXITCODE -le 7) { exit 0 } else { exit $LASTEXITCODE }
+
+      - name: Write .env file from secrets
+        shell: powershell -ExecutionPolicy Bypass -Command "{0}"
+        env:
+          PORT: ${{ secrets.PORT }}
+          MUSIC_DIR: ${{ secrets.MUSIC_DIR }}
+          YT_DLP_COMMAND: ${{ secrets.YT_DLP_COMMAND }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          MONGO_DB_NAME: ${{ secrets.MONGO_DB_NAME }}
+          MONGO_LINKS_COLLECTION: ${{ secrets.MONGO_LINKS_COLLECTION }}
+        run: |
+          $envContent = @"
+          PORT=$env:PORT
+          MUSIC_DIR=$env:MUSIC_DIR
+          YT_DLP_COMMAND=$env:YT_DLP_COMMAND
+          MONGO_URI=$env:MONGO_URI
+          MONGO_DB_NAME=$env:MONGO_DB_NAME
+          MONGO_LINKS_COLLECTION=$env:MONGO_LINKS_COLLECTION
+          "@
+          $envContent = $envContent -replace '(?m)^\s+', ''
+          Set-Content -Path "C:\nasdash\.env" -Value $envContent -Encoding UTF8
+          Write-Host ".env file written to C:\nasdash\.env"
 
       - name: Install backend dependencies
         shell: powershell -ExecutionPolicy Bypass -Command "{0}"
