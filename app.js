@@ -119,7 +119,7 @@ function isValidHttpUrl(value) {
 }
 
 function normalizeLinkInput(input = {}) {
-  const .\config.cmd --runasservicename = typeof input.name === 'string' ? input.name.trim() : '';
+  const name = typeof input.name === 'string' ? input.name.trim() : '';
   const url = typeof input.url === 'string' ? input.url.trim() : '';
 
   if (!name) {
