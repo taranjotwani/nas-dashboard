@@ -14,6 +14,7 @@ import LinkEditorPanel from './components/LinkEditorPanel.jsx';
 import LinkTileCard, { AddLinkCard } from './components/LinkTileCard.jsx';
 import LinkContext from './context/LinkContext.jsx';
 import SystemUsageCard from './components/SystemUsageCard.jsx';
+import RunnerCard from './components/RunnerCard.jsx';
 
 const App = () => {
   const {
@@ -136,6 +137,9 @@ const App = () => {
 
           {/* System Usage Section */}
           <SystemUsageCard />
+
+          {/* GitHub Actions Runner */}
+          <RunnerCard />
 
           {editorState.isOpen ? (
             <LinkEditorPanel

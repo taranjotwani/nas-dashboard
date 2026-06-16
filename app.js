@@ -519,6 +519,56 @@ app.get('/api/music/config', async (req, res) => {
   }
 });
 
+// GitHub Actions Runner control (Windows service)
+const RUNNER_SERVICE_PATTERN = 'actions.runner.*';
+
+function runPowerShell(psCommand) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psCommand]);
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout.trim());
+      } else {
+        reject(new Error(stderr.trim() || `powershell exited with code ${code}`));
+      }
+    });
+  });
+}
+
+app.get('/api/runner/status', async (req, res) => {
+  try {
+    const output = await runPowerShell(
+      `$svc = Get-Service -Name '${RUNNER_SERVICE_PATTERN}' -ErrorAction SilentlyContinue; if ($svc) { $svc.Status } else { 'NotFound' }`
+    );
+    res.json({ running: output === 'Running', status: output || 'Unknown' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to query runner status', message: error.message });
+  }
+});
+
+app.post('/api/runner/start', async (req, res) => {
+  try {
+    await runPowerShell(`Start-Service -Name '${RUNNER_SERVICE_PATTERN}'`);
+    res.json({ ok: true, message: 'Runner started' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to start runner', message: error.message });
+  }
+});
+
+app.post('/api/runner/stop', async (req, res) => {
+  try {
+    await runPowerShell(`Stop-Service -Name '${RUNNER_SERVICE_PATTERN}'`);
+    res.json({ ok: true, message: 'Runner stopped' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to stop runner', message: error.message });
+  }
+});
+
 // Simple GET webservice: send index.html from dist
 app.get('/', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
