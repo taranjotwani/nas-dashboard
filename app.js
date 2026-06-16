@@ -17,6 +17,17 @@ const PORT = process.env.PORT || 3000;
 const DEFAULT_MUSIC_DIR = process.env.MUSIC_DIR || 'E:/Music/Albums';
 const YT_DLP_COMMAND = process.env.YT_DLP_COMMAND || 'yt-dlp';
 
+// Service URLs
+const PROWLARR_URL = 'http://192.168.1.87:9696';
+const FILEBROWSER_URL = 'http://192.168.1.87:1002';
+const IMMICH_URL = 'http://192.168.1.87:2283';
+const SABNZBD_URL = 'http://192.168.1.87:6789';
+const JELLYFIN_URL = 'http://192.168.1.87:8096';
+
+// Service API keys
+const PROWLARR_API_KEY = '4487bb65566c4781bbbdbbb27932a9bd';
+const SABNZBD_API_KEY = '8ca263913f9a488fb9a42cfb310206de';
+
 // MongoDB Atlas connection
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'nas-dash';
@@ -108,7 +119,7 @@ function isValidHttpUrl(value) {
 }
 
 function normalizeLinkInput(input = {}) {
-  const name = typeof input.name === 'string' ? input.name.trim() : '';
+  const .\config.cmd --runasservicename = typeof input.name === 'string' ? input.name.trim() : '';
   const url = typeof input.url === 'string' ? input.url.trim() : '';
 
   if (!name) {
@@ -359,7 +370,7 @@ app.delete('/api/links/:linkId', async (req, res) => {
 // Proxy endpoint for FileBrowser health check
 app.get('/api/health/filebrowser', async (req, res) => {
   try {
-    const response = await axios.get('http://192.168.1.87:1002/health', {
+    const response = await axios.get(`${FILEBROWSER_URL}/health`, {
       timeout: 5000
     });
     res.status(response.status).json({
@@ -393,24 +404,24 @@ app.get('/api/health/data', async (req, res) => {
     // Define service base URLs and their health check endpoints
     const serviceUrls = {
       prowlarr: {
-        base: 'http://192.168.1.87:9696',
-        health: 'http://192.168.1.87:9696/api/v1/health?apikey=4487bb65566c4781bbbdbbb27932a9bd'
+        base: PROWLARR_URL,
+        health: `${PROWLARR_URL}/api/v1/health?apikey=${PROWLARR_API_KEY}`
       },
       filebrowser: {
-        base: 'http://192.168.1.87:1002',
-        health: 'http://192.168.1.87:1002/health'
+        base: FILEBROWSER_URL,
+        health: `${FILEBROWSER_URL}/health`
       },
       immich: {
-        base: 'http://192.168.1.87:2283',
-        health: 'http://192.168.1.87:2283/api/server/ping'
+        base: IMMICH_URL,
+        health: `${IMMICH_URL}/api/server/ping`
       },
       sabnzbd: {
-        base: 'http://192.168.1.87:6789',
-        health: 'http://192.168.1.87:6789/api?mode=queue&apikey=8ca263913f9a488fb9a42cfb310206de&output=json'
+        base: SABNZBD_URL,
+        health: `${SABNZBD_URL}/api?mode=queue&apikey=${SABNZBD_API_KEY}&output=json`
       },
       jellyfin: {
-        base: 'http://192.168.1.87:8096',
-        health: 'http://192.168.1.87:8096/health'
+        base: JELLYFIN_URL,
+        health: `${JELLYFIN_URL}/health`
       }
     };
 
@@ -520,7 +531,8 @@ app.get('/api/music/config', async (req, res) => {
 });
 
 // GitHub Actions Runner control (Windows service)
-const RUNNER_SERVICE_PATTERN = 'actions.runner.*';
+const RUNNER_DIR = process.env.RUNNER_DIR || 'C:\\actions-runner';
+const RUNNER_SERVICE_NAME = process.env.RUNNER_SERVICE_NAME || 'actions.runner.taranjotwani-nas-dashboard.nas-runner';
 
 function runPowerShell(psCommand) {
   return new Promise((resolve, reject) => {
@@ -543,9 +555,9 @@ function runPowerShell(psCommand) {
 app.get('/api/runner/status', async (req, res) => {
   try {
     const output = await runPowerShell(
-      `$svc = Get-Service -Name '${RUNNER_SERVICE_PATTERN}' -ErrorAction SilentlyContinue; if ($svc) { $svc.Status } else { 'NotFound' }`
+      `(Get-Service -Name '${RUNNER_SERVICE_NAME}').Status`
     );
-    res.json({ running: output === 'Running', status: output || 'Unknown' });
+    res.json({ running: output === 'Running', status: output });
   } catch (error) {
     res.status(500).json({ error: 'Failed to query runner status', message: error.message });
   }
@@ -553,7 +565,7 @@ app.get('/api/runner/status', async (req, res) => {
 
 app.post('/api/runner/start', async (req, res) => {
   try {
-    await runPowerShell(`Start-Service -Name '${RUNNER_SERVICE_PATTERN}'`);
+    await runPowerShell(`Start-Service -Name '${RUNNER_SERVICE_NAME}'`);
     res.json({ ok: true, message: 'Runner started' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start runner', message: error.message });
@@ -562,10 +574,34 @@ app.post('/api/runner/start', async (req, res) => {
 
 app.post('/api/runner/stop', async (req, res) => {
   try {
-    await runPowerShell(`Stop-Service -Name '${RUNNER_SERVICE_PATTERN}'`);
+    await runPowerShell(`Stop-Service -Name '${RUNNER_SERVICE_NAME}'`);
     res.json({ ok: true, message: 'Runner stopped' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to stop runner', message: error.message });
+  }
+});
+
+// Return last 100 lines of the most recent runner diagnostic log
+app.get('/api/runner/logs', async (req, res) => {
+  try {
+    const diagDir = path.join(RUNNER_DIR, '_diag');
+    const entries = await fs.promises.readdir(diagDir, { withFileTypes: true });
+    const logFiles = entries
+      .filter((e) => e.isFile() && e.name.startsWith('Runner_') && e.name.endsWith('.log'))
+      .map((e) => e.name)
+      .sort()
+      .reverse();
+
+    if (logFiles.length === 0) {
+      return res.json({ lines: [], file: null });
+    }
+
+    const latestFile = logFiles[0];
+    const content = await fs.promises.readFile(path.join(diagDir, latestFile), 'utf8');
+    const lines = content.split(/\r?\n/).filter(Boolean).slice(-100);
+    res.json({ lines, file: latestFile });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to read runner logs', message: error.message });
   }
 });
 

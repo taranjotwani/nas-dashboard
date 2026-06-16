@@ -1,40 +1,61 @@
-import React, { useEffect, useState } from 'react';
-import { Play, Square, Terminal } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Play, Square, Terminal } from 'lucide-react';
 
 const POLL_INTERVAL_MS = 10_000;
+const LOG_POLL_INTERVAL_MS = 5_000;
 
 const RunnerCard = () => {
   const [running, setRunning] = useState(null);
-  const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logLines, setLogLines] = useState([]);
+  const [logFile, setLogFile] = useState('');
+  const logBoxRef = useRef(null);
 
-  async function fetchStatus() {
+  const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/runner/status');
       const data = await res.json();
       setRunning(data.running);
-      setStatus(data.status);
       setError('');
-    } catch (err) {
+    } catch {
       setError('Failed to fetch runner status');
     }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function poll() {
-      if (!cancelled) await fetchStatus();
-    }
-
-    poll();
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
   }, []);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/runner/logs');
+      const data = await res.json();
+      setLogLines(data.lines ?? []);
+      setLogFile(data.file ?? '');
+    } catch {
+      // silently ignore log fetch errors
+    }
+  }, []);
+
+  // Status polling
+  useEffect(() => {
+    fetchStatus();
+    const interval = setInterval(fetchStatus, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchStatus]);
+
+  // Log polling when panel is open
+  useEffect(() => {
+    if (!logsOpen) return;
+    fetchLogs();
+    const interval = setInterval(fetchLogs, LOG_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [logsOpen, fetchLogs]);
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    if (logBoxRef.current) {
+      logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
+    }
+  }, [logLines]);
 
   async function handleStart() {
     setLoading(true);
@@ -45,7 +66,8 @@ const RunnerCard = () => {
         const data = await res.json();
         throw new Error(data.message || 'Failed to start runner');
       }
-      await fetchStatus();
+      // Give the process a moment to start before re-checking status
+      setTimeout(fetchStatus, 2000);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -62,7 +84,7 @@ const RunnerCard = () => {
         const data = await res.json();
         throw new Error(data.message || 'Failed to stop runner');
       }
-      await fetchStatus();
+      setTimeout(fetchStatus, 1500);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -73,11 +95,7 @@ const RunnerCard = () => {
   const statusDot = running
     ? 'bg-emerald-400 shadow-emerald-400/50 shadow-sm'
     : 'bg-zinc-500';
-  const statusText = running
-    ? 'Running'
-    : status === 'NotFound'
-      ? 'Service not found'
-      : 'Stopped';
+  const statusText = running ? 'Running' : 'Stopped';
   const statusColor = running ? 'text-emerald-400' : 'text-zinc-400';
 
   return (
@@ -113,12 +131,39 @@ const RunnerCard = () => {
             <Square size={14} />
             Stop Runner
           </button>
+          <button
+            onClick={() => setLogsOpen((v) => !v)}
+            className="flex items-center gap-1 rounded-xl border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+          >
+            Logs
+            {logsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
         </div>
       </div>
 
       {error && (
         <div className="mt-3 rounded-xl border border-red-600/40 bg-red-900/30 px-4 py-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+
+      {logsOpen && (
+        <div className="mt-4">
+          {logFile && (
+            <p className="mb-1 text-xs text-zinc-500 font-mono">{logFile}</p>
+          )}
+          <div
+            ref={logBoxRef}
+            className="h-64 overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-950 p-3 font-mono text-xs text-zinc-300 space-y-0.5"
+          >
+            {logLines.length === 0 ? (
+              <span className="text-zinc-500">No log entries found.</span>
+            ) : (
+              logLines.map((line, i) => (
+                <div key={i} className="whitespace-pre-wrap break-all leading-5">{line}</div>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>
